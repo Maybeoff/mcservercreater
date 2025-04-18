@@ -11,6 +11,21 @@ import subprocess
 import shutil
 from pathlib import Path
 
+class ConfigLoader(QThread):
+    loaded = pyqtSignal(dict)
+    error = pyqtSignal(str)
+    
+    def run(self):
+        try:
+            # GitHub raw content URL
+            url = "https://raw.githubusercontent.com/Maybeoff/mcservercreater/main/server-config.json"
+            response = requests.get(url)
+            response.raise_for_status()
+            config = response.json()
+            self.loaded.emit(config)
+        except Exception as e:
+            self.error.emit(f"Failed to load configuration: {str(e)}")
+
 class DownloadThread(QThread):
     progress = pyqtSignal(int)
     finished = pyqtSignal(bool)
@@ -176,12 +191,34 @@ class ServerCreator(QMainWindow):
         self.setWindowTitle("Minecraft Server Creator")
         self.setGeometry(100, 100, 400, 300)
         
-        # Load configuration
-        with open('server-config.json', 'r') as f:
-            self.config_data = json.load(f)
+        # Start loading configuration
+        self.load_config()
         
+    def load_config(self):
+        self.progress_label = QLabel("Loading configuration...")
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setRange(0, 0)  # Indeterminate progress
+        
+        central_widget = QWidget()
+        layout = QVBoxLayout()
+        layout.addWidget(self.progress_label)
+        layout.addWidget(self.progress_bar)
+        central_widget.setLayout(layout)
+        self.setCentralWidget(central_widget)
+        
+        self.config_loader = ConfigLoader()
+        self.config_loader.loaded.connect(self.on_config_loaded)
+        self.config_loader.error.connect(self.on_config_error)
+        self.config_loader.start()
+    
+    def on_config_loaded(self, config):
+        self.config_data = config
         self.setup_ui()
-        
+    
+    def on_config_error(self, error_message):
+        QMessageBox.critical(self, "Error", error_message)
+        self.close()
+    
     def setup_ui(self):
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
